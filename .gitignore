@@ -1,1 +1,14 @@
-*.meta
+# Folder .meta files only — regenerated harmlessly by Unity on import.
+# Asset .meta files (scripts etc.) ARE tracked: they hold GUIDs that
+# other projects/scenes may reference, so losing them breaks links.
+Editor.meta
+Editor/Build.meta
+Editor/Build/Passes.meta
+Editor/Conversion.meta
+Editor/Drawers.meta
+Editor/Inspector.meta
+Editor/MenuItems.meta
+Editor/SetupOutfit.meta
+Runtime.meta
+Runtime/Attributes.meta
+Runtime/Menu.meta
