@@ -140,3 +140,4 @@ cleaned up after the build. Source assets are never modified.
 | Extract Menu | CVR AAS is a flat list — nothing to extract |
 
 Not yet built (candidates): Move Independently, Manual Bake Avatar, Reactive Object Debugger.
+and yes some or most is ai sloppa
