@@ -21,6 +21,7 @@ namespace ModularAvatarCVR.Editor
             DrawPropertiesExcluding(serializedObject, "m_Script");
 
             CVRMAReactivePreview.DrawPreviewToggle((CVRMAMaterialSwap)target);
+            CVRMAReactionDebuggerWindow.DrawOpenButton();
 
             serializedObject.ApplyModifiedProperties();
         }

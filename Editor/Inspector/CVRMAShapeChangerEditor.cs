@@ -35,8 +35,12 @@ namespace ModularAvatarCVR.Editor
                 "(a collapse blendshape is generated at build so it toggles at runtime).",
                 MessageType.None);
 
+            var changer = (CVRMAShapeChanger)target;
+
             EditorGUILayout.Space(4);
-            EditorGUILayout.PropertyField(_parameter,             new GUIContent("Parameter"));
+            EditorGUILayout.PropertyField(_parameter, new GUIContent("Parameter (optional)",
+                "Leave empty to inherit from the nearest parent MA Menu Item, or to become a standalone toggle named after this GameObject."));
+            DrawResolvedParameterInfo(changer);
             EditorGUILayout.PropertyField(_defaultValue,          new GUIContent("Default (ON)"));
             EditorGUILayout.PropertyField(_inverseCondition,      new GUIContent("Inverse Condition"));
             EditorGUILayout.PropertyField(_threshold,             new GUIContent("Activation Threshold"));
@@ -45,9 +49,22 @@ namespace ModularAvatarCVR.Editor
             EditorGUILayout.Space(4);
             EditorGUILayout.PropertyField(_shapes, new GUIContent("Changed Shapes"), true);
 
-            CVRMAReactivePreview.DrawPreviewToggle((CVRMAShapeChanger)target);
+            CVRMAReactivePreview.DrawPreviewToggle(changer);
+            CVRMAReactionDebuggerWindow.DrawOpenButton();
 
             serializedObject.ApplyModifiedProperties();
+        }
+
+        /// <summary>Shows where the effective parameter comes from when the field is empty.</summary>
+        private static void DrawResolvedParameterInfo(CVRMAShapeChanger changer)
+        {
+            if (!string.IsNullOrEmpty(changer.parameter)) return;
+
+            var item = changer.GetComponentInParent<CVRMAMenuItem>(true);
+            string info = item != null
+                ? $"→ inherits '{item.GetEffectiveMachineName()}' from Menu Item '{item.GetEffectiveLabel()}'"
+                : $"→ standalone toggle '{changer.GetEffectiveParameter()}' (from GameObject name)";
+            EditorGUILayout.LabelField(info, EditorStyles.miniLabel);
         }
     }
 

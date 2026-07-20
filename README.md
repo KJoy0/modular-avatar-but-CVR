@@ -81,6 +81,15 @@ inside dropdown selections.
 | **MA Material Swap** | Swaps materials (from → to) on all renderers under a root. |
 | **MA Material Setter** | Sets a specific material slot on a specific renderer. |
 
+Reactive components **preview live in the editor**: select the component (or a Menu Item
+driving its parameter) to see the ON state in the scene, or pin the preview from the
+inspector. Originals are always restored — around scene saves, play mode, and builds.
+
+**Reaction Debugger** (`Tools → Modular Avatar CVR → Reaction Debugger`, or the button on
+any reactive component): shows every reaction grouped by driving parameter, how the
+parameter is bound (menu item, dropdown option, auto toggle), what each reaction affects,
+configuration warnings, and per-row Select / Pin-Preview buttons.
+
 > **Why animator layers instead of AAS clips:** CVR only regenerates the AAS animator when
 > you click *Create Controller* in the CVRAvatar inspector — never during a build. Each
 > reactive component therefore builds its own animator layer (merged via Merge Animator)
@@ -139,5 +148,5 @@ cleaned up after the build. Source assets are never modified.
 | Sync Parameter Sequence, VRChat Settings, MMD Layer Control | VRC platform/world conventions |
 | Extract Menu | CVR AAS is a flat list — nothing to extract |
 
-Not yet built (candidates): Move Independently, Manual Bake Avatar, Reactive Object Debugger.
+Not yet built (candidates): Move Independently, Manual Bake Avatar.
 and yes some or most is ai sloppa

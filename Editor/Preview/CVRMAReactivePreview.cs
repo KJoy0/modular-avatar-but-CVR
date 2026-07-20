@@ -59,6 +59,9 @@ namespace ModularAvatarCVR.Editor
 
         internal static bool IsPinned(Component c) => _pinned.Contains(c);
 
+        /// <summary>True while the component's preview is currently applied in the scene.</summary>
+        internal static bool IsPreviewing(Component c) => _active.ContainsKey(c);
+
         internal static void SetPinned(Component c, bool pinned)
         {
             if (pinned) _pinned.Add(c);

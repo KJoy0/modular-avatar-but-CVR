@@ -3,6 +3,7 @@
 # other projects/scenes may reference, so losing them breaks links.
 Editor.meta
 Editor/Build.meta
+Editor/Debugger.meta
 Editor/Build/Passes.meta
 Editor/Conversion.meta
 Editor/Drawers.meta
