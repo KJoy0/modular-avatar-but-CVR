@@ -41,6 +41,10 @@ namespace ModularAvatarCVR.Editor
 
             Debug.Log($"[MA-CVR] Processing avatar: {avatar.name}");
 
+            // Editor previews must be undone before passes read scene state,
+            // or previewed values would be baked into the build.
+            CVRMAReactivePreview.RestoreForBuild();
+
             CVRMAReplaceObjectPass.Run(avatar);    // first — later passes see the final hierarchy
             CVRMAVisibleHeadAccessoryPass.Run(avatar);
             CVRMABoneProxyPass.Run(avatar);

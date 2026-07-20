@@ -38,6 +38,8 @@ namespace ModularAvatarCVR.Editor
             EditorGUILayout.Space(4);
             EditorGUILayout.PropertyField(_shapes, new GUIContent("Changed Shapes"), true);
 
+            CVRMAReactivePreview.DrawPreviewToggle((CVRMAShapeChanger)target);
+
             serializedObject.ApplyModifiedProperties();
         }
     }

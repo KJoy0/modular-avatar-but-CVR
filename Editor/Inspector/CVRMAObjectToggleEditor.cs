@@ -39,6 +39,8 @@ namespace ModularAvatarCVR.Editor
             EditorGUILayout.PropertyField(_defaultValue, new GUIContent("Default (ON)"));
             EditorGUILayout.PropertyField(_objects,      new GUIContent("Toggled Objects"), true);
 
+            CVRMAReactivePreview.DrawPreviewToggle((CVRMAObjectToggle)target);
+
             EditorGUILayout.Space(8);
 
             var toggle = (CVRMAObjectToggle)target;
