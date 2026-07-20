@@ -7,22 +7,38 @@ using UnityEngine;
 namespace ModularAvatarCVR.Editor
 {
     /// <summary>
-    /// Converts each CVRMAShapeChanger into a parameter-driven animator layer merged
-    /// into the avatar's controller, plus a slim AAS menu entry.
+    /// Converts each CVRMAShapeChanger following VRC MA's reaction model. The
+    /// condition driving the shapes is resolved in order:
+    ///
+    ///   1. explicit parameter          → own toggle (animator layer + AAS entry)
+    ///   2. parent MA Menu Item         → that item's parameter (typed binding)
+    ///   3. an Object Toggle targeting this object or an ancestor
+    ///                                  → follows that toggle's parameter (no own entry)
+    ///   4. nothing drives it, object active   → baked statically: Set applied to the
+    ///                                    mesh, Delete polygons permanently removed
+    ///   5. nothing drives it, object inactive → never active; component removed
     ///
     /// Set entries animate the blendshape to the given value while active.
-    ///
-    /// Delete entries mirror VRC MA: the polygons DISPLACED by the blendshape
-    /// (beyond the displacement threshold) are collapsed while active. Since meshes
-    /// can't be re-cut at runtime, the pass clones the mesh and adds a generated
-    /// blendshape that collapses the affected vertices, then animates that shape
-    /// 0 ↔ 100 with the toggle.
+    /// Delete entries remove the polygons DISPLACED by the blendshape (beyond the
+    /// displacement threshold). Animated deletion uses a generated collapse
+    /// blendshape on a cloned mesh (meshes can't be re-cut at runtime).
     ///
     /// See CVRMAAnimatorUtil for why AAS useAnimationClip can't be used.
     /// </summary>
     internal static class CVRMAShapeChangerPass
     {
         private const string TempFolder = "Assets/MA_CVR_Temp";
+
+        private enum ConditionKind { Animated, Static, Never }
+
+        private struct Condition
+        {
+            public ConditionKind kind;
+            public string machineName;
+            public bool inverse;
+            public bool registerAAS;    // false when another component owns the AAS entry
+            public GameObject bindingHost; // where to resolve the menu Int/Float binding from
+        }
 
         internal static void Run(GameObject avatarRoot)
         {
@@ -46,34 +62,241 @@ namespace ModularAvatarCVR.Editor
                     continue;
                 }
 
-                var machineName = changer.GetEffectiveParameter();
+                var condition = ResolveCondition(avatarRoot, changer);
+                switch (condition.kind)
+                {
+                    case ConditionKind.Never:
+                        Debug.Log(
+                            $"[MA-CVR] ShapeChanger '{changer.gameObject.name}': object is disabled and " +
+                            "nothing toggles it — reaction can never fire, removed.");
+                        break;
 
-                // Delete entries first: clone meshes and generate collapse blendshapes.
-                var deleteShapes = PrepareDeleteShapes(changer, machineName);
+                    case ConditionKind.Static:
+                        BakeStatic(changer);
+                        break;
 
-                var activeClip   = BuildClip(avatarRoot, changer, deleteShapes, active: true,  name: $"{machineName}_ShapeOn");
-                var inactiveClip = BuildClip(avatarRoot, changer, deleteShapes, active: false, name: $"{machineName}_ShapeOff");
-
-                // Inverse Condition swaps which clip plays in the parameter's ON state.
-                var onClip  = changer.inverseCondition ? inactiveClip : activeClip;
-                var offClip = changer.inverseCondition ? activeClip   : inactiveClip;
-
-                // Build a real animator layer and merge it (the AAS clips path is a dead end).
-                var (paramType, compareValue, menuOwned) =
-                    CVRMAAnimatorUtil.ResolveMenuBinding(changer.gameObject, machineName);
-                var controller = CVRMAAnimatorUtil.BuildToggleController(
-                    machineName, onClip, offClip, changer.defaultValue, paramType, compareValue);
-                if (controller != null)
-                    CVRMAAnimatorUtil.InjectMergeAnimator(changer.gameObject, controller);
-
-                // Register the menu parameter (one entry per machine name) — unless an
-                // Int/Float menu item owns it (the MenuToAAS pass creates that entry).
-                if (!menuOwned)
-                    CVRMAAASUtil.AddOrMergeToggleEntry(avatar,
-                        CVRMAAnimatorUtil.BuildMenuEntry(changer.gameObject.name, machineName, changer.defaultValue));
+                    default:
+                        BuildAnimated(avatarRoot, avatar, changer, condition);
+                        break;
+                }
 
                 Object.DestroyImmediate(changer);
             }
+        }
+
+        // ------------------------------------------------------------------ condition
+
+        private static Condition ResolveCondition(GameObject avatarRoot, CVRMAShapeChanger changer)
+        {
+            if (!string.IsNullOrEmpty(changer.parameter))
+                return new Condition
+                {
+                    kind = ConditionKind.Animated,
+                    machineName = changer.parameter,
+                    inverse = changer.inverseCondition,
+                    registerAAS = true,
+                    bindingHost = changer.gameObject
+                };
+
+            var item = changer.GetComponentInParent<CVRMAMenuItem>(true);
+            if (item != null)
+                return new Condition
+                {
+                    kind = ConditionKind.Animated,
+                    machineName = item.GetEffectiveMachineName(),
+                    inverse = changer.inverseCondition,
+                    registerAAS = true,
+                    bindingHost = changer.gameObject
+                };
+
+            var (toggle, activeWhenOn) = FindDrivingToggle(avatarRoot, changer.transform);
+            if (toggle != null)
+                return new Condition
+                {
+                    kind = ConditionKind.Animated,
+                    machineName = toggle.GetEffectiveParameter(),
+                    // If the toggle HIDES the object when ON, the reaction runs when OFF.
+                    inverse = changer.inverseCondition ^ !activeWhenOn,
+                    registerAAS = false, // the ObjectToggle pass owns the AAS entry
+                    bindingHost = toggle.gameObject
+                };
+
+            bool staticallyOn = changer.gameObject.activeInHierarchy != changer.inverseCondition;
+            return new Condition { kind = staticallyOn ? ConditionKind.Static : ConditionKind.Never };
+        }
+
+        /// <summary>Finds an Object Toggle whose entries drive this object or an ancestor of it.</summary>
+        private static (CVRMAObjectToggle toggle, bool activeWhenOn) FindDrivingToggle(
+            GameObject avatarRoot, Transform t)
+        {
+            foreach (var toggle in avatarRoot.GetComponentsInChildren<CVRMAObjectToggle>(true))
+            {
+                if (toggle.objects == null) continue;
+                foreach (var entry in toggle.objects)
+                {
+                    if (entry?.target == null) continue;
+                    if (t == entry.target || t.IsChildOf(entry.target))
+                        return (toggle, entry.activeWhenOn);
+                }
+            }
+            return (null, true);
+        }
+
+        /// <summary>
+        /// Human-readable condition source for the inspector and Reaction Debugger.
+        /// <paramref name="machineName"/> is null when the reaction is static/never.
+        /// </summary>
+        internal static string DescribeConditionSource(CVRMAShapeChanger changer, out string machineName)
+        {
+            machineName = null;
+
+            if (!string.IsNullOrEmpty(changer.parameter))
+            {
+                machineName = changer.parameter;
+                return $"explicit parameter '{machineName}'";
+            }
+
+            var item = changer.GetComponentInParent<CVRMAMenuItem>(true);
+            if (item != null)
+            {
+                machineName = item.GetEffectiveMachineName();
+                return $"inherits '{machineName}' from Menu Item '{item.GetEffectiveLabel()}'";
+            }
+
+            var avatar = changer.GetComponentInParent<ABI.CCK.Components.CVRAvatar>(true);
+            var root = avatar != null ? avatar.gameObject : changer.transform.root.gameObject;
+            var (toggle, activeWhenOn) = FindDrivingToggle(root, changer.transform);
+            if (toggle != null)
+            {
+                machineName = toggle.GetEffectiveParameter();
+                return $"follows Object Toggle '{toggle.gameObject.name}' ('{machineName}'" +
+                       (activeWhenOn ? ")" : ", inverted)");
+            }
+
+            bool staticallyOn = changer.gameObject.activeInHierarchy != changer.inverseCondition;
+            return staticallyOn
+                ? "applies statically at build (object always active)"
+                : "never active (object disabled, nothing toggles it)";
+        }
+
+        // ------------------------------------------------------------------ static bake
+
+        private static void BakeStatic(CVRMAShapeChanger changer)
+        {
+            int setCount = 0;
+
+            foreach (var shape in changer.shapes)
+            {
+                if (shape.changeType != CVRMAShapeChangeType.Set) continue;
+                if (shape.targetMesh == null || shape.targetMesh.sharedMesh == null) continue;
+                if (string.IsNullOrEmpty(shape.shapeName)) continue;
+
+                int idx = shape.targetMesh.sharedMesh.GetBlendShapeIndex(shape.shapeName);
+                if (idx < 0)
+                {
+                    Debug.LogWarning(
+                        $"[MA-CVR] ShapeChanger '{changer.gameObject.name}': blendshape " +
+                        $"'{shape.shapeName}' not found on '{shape.targetMesh.name}' — skipped.");
+                    continue;
+                }
+                shape.targetMesh.SetBlendShapeWeight(idx, shape.value);
+                setCount++;
+            }
+
+            int deletedTris = 0;
+            foreach (var kv in GroupDeleteEntries(changer))
+            {
+                var smr = kv.Key;
+                var mesh = smr.sharedMesh;
+                if (mesh == null) continue;
+
+                var matched = ComputeDisplacedVertices(
+                    mesh, kv.Value, changer.displacementThreshold, changer.gameObject.name);
+                if (matched == null) continue;
+
+                var kept = KeepTrianglesNotFullyMatched(mesh, matched, out int removed);
+                if (removed == 0) continue;
+
+                var clone = CVRMAMeshCutterUtil.BuildCompactedMesh(mesh, kept, mesh.name + "_ShapeDel");
+                EnsureTempFolder();
+                AssetDatabase.CreateAsset(clone, $"{TempFolder}/MA_CVR_{clone.name}_{GUID.Generate()}.asset");
+                smr.sharedMesh = clone;
+                deletedTris += removed;
+            }
+
+            Debug.Log(
+                $"[MA-CVR] ShapeChanger '{changer.gameObject.name}': baked statically " +
+                $"({setCount} shape(s) set, {deletedTris} tri(s) deleted).");
+        }
+
+        // ------------------------------------------------------------------ animated
+
+        private static void BuildAnimated(
+            GameObject avatarRoot, ABI.CCK.Components.CVRAvatar avatar,
+            CVRMAShapeChanger changer, Condition condition)
+        {
+            var machineName = condition.machineName;
+
+            // Delete entries first: clone meshes and generate collapse blendshapes.
+            var deleteShapes = PrepareDeleteShapes(changer, machineName);
+
+            var activeClip   = BuildClip(avatarRoot, changer, deleteShapes, active: true,  name: $"{machineName}_ShapeOn");
+            var inactiveClip = BuildClip(avatarRoot, changer, deleteShapes, active: false, name: $"{machineName}_ShapeOff");
+
+            var onClip  = condition.inverse ? inactiveClip : activeClip;
+            var offClip = condition.inverse ? activeClip   : inactiveClip;
+
+            // Build a real animator layer and merge it (the AAS clips path is a dead end).
+            var (paramType, compareValue, menuOwned) =
+                CVRMAAnimatorUtil.ResolveMenuBinding(condition.bindingHost, machineName);
+            var controller = CVRMAAnimatorUtil.BuildToggleController(
+                machineName, onClip, offClip, changer.defaultValue, paramType, compareValue);
+            if (controller != null)
+                CVRMAAnimatorUtil.InjectMergeAnimator(changer.gameObject, controller);
+
+            // Register the menu parameter unless another component owns the entry
+            // (an Int/Float menu item, or the Object Toggle this reaction follows).
+            if (condition.registerAAS && !menuOwned)
+                CVRMAAASUtil.AddOrMergeToggleEntry(avatar,
+                    CVRMAAnimatorUtil.BuildMenuEntry(changer.gameObject.name, machineName, changer.defaultValue));
+        }
+
+        // ------------------------------------------------------------------ delete helpers
+
+        private static Dictionary<SkinnedMeshRenderer, List<string>> GroupDeleteEntries(CVRMAShapeChanger changer)
+        {
+            var byMesh = new Dictionary<SkinnedMeshRenderer, List<string>>();
+            foreach (var shape in changer.shapes)
+            {
+                if (shape.changeType != CVRMAShapeChangeType.Delete) continue;
+                if (shape.targetMesh == null || string.IsNullOrEmpty(shape.shapeName)) continue;
+                if (!byMesh.TryGetValue(shape.targetMesh, out var list))
+                    byMesh[shape.targetMesh] = list = new List<string>();
+                list.Add(shape.shapeName);
+            }
+            return byMesh;
+        }
+
+        /// <summary>Per-submesh triangle lists excluding triangles whose vertices are all matched.</summary>
+        internal static List<int>[] KeepTrianglesNotFullyMatched(Mesh mesh, bool[] matched, out int removedTris)
+        {
+            var kept = new List<int>[mesh.subMeshCount];
+            removedTris = 0;
+            for (int s = 0; s < mesh.subMeshCount; s++)
+            {
+                var tris = mesh.GetTriangles(s);
+                kept[s] = new List<int>(tris.Length);
+                for (int t = 0; t < tris.Length; t += 3)
+                {
+                    if (matched[tris[t]] && matched[tris[t + 1]] && matched[tris[t + 2]])
+                    {
+                        removedTris++;
+                        continue;
+                    }
+                    kept[s].Add(tris[t]); kept[s].Add(tris[t + 1]); kept[s].Add(tris[t + 2]);
+                }
+            }
+            return kept;
         }
 
         /// <summary>
@@ -87,17 +310,7 @@ namespace ModularAvatarCVR.Editor
         {
             var results = new List<(SkinnedMeshRenderer, string)>();
 
-            var byMesh = new Dictionary<SkinnedMeshRenderer, List<string>>();
-            foreach (var shape in changer.shapes)
-            {
-                if (shape.changeType != CVRMAShapeChangeType.Delete) continue;
-                if (shape.targetMesh == null || string.IsNullOrEmpty(shape.shapeName)) continue;
-                if (!byMesh.TryGetValue(shape.targetMesh, out var list))
-                    byMesh[shape.targetMesh] = list = new List<string>();
-                list.Add(shape.shapeName);
-            }
-
-            foreach (var kv in byMesh)
+            foreach (var kv in GroupDeleteEntries(changer))
             {
                 var smr = kv.Key;
                 var mesh = smr.sharedMesh;
@@ -185,6 +398,8 @@ namespace ModularAvatarCVR.Editor
                 if (matched[v]) deltas[v] = centroid - vertices[v];
             return deltas;
         }
+
+        // ------------------------------------------------------------------ clips
 
         private static AnimationClip BuildClip(
             GameObject avatarRoot, CVRMAShapeChanger changer,

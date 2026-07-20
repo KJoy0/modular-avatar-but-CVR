@@ -88,15 +88,19 @@ namespace ModularAvatarCVR.Editor
             var groups = new Dictionary<string, List<Component>>();
             foreach (var c in root.GetComponentsInChildren<CVRMAComponent>(true))
             {
-                string parameter = c switch
+                string parameter;
+                switch (c)
                 {
-                    CVRMAShapeChanger sc   => sc.GetEffectiveParameter(),
-                    CVRMAObjectToggle ot   => ot.GetEffectiveParameter(),
-                    CVRMAMaterialSwap ms   => ms.GetEffectiveParameter(),
-                    CVRMAMaterialSetter st => st.GetEffectiveParameter(),
-                    _ => null
-                };
-                if (parameter == null) continue;
+                    case CVRMAShapeChanger sc:
+                        // Full MA condition chain: menu item / driving toggle / static / never.
+                        CVRMAShapeChangerPass.DescribeConditionSource(sc, out var machine);
+                        parameter = machine ?? "(no parameter — object state)";
+                        break;
+                    case CVRMAObjectToggle ot:   parameter = ot.GetEffectiveParameter(); break;
+                    case CVRMAMaterialSwap ms:   parameter = ms.GetEffectiveParameter(); break;
+                    case CVRMAMaterialSetter st: parameter = st.GetEffectiveParameter(); break;
+                    default: continue;
+                }
 
                 if (!groups.TryGetValue(parameter, out var list))
                     groups[parameter] = list = new List<Component>();
@@ -152,6 +156,9 @@ namespace ModularAvatarCVR.Editor
 
         private static string DescribeBinding(Transform root, string parameter)
         {
+            if (parameter.StartsWith("("))
+                return "Driven by the object's active state — baked statically (or removed) at build.";
+
             var drivers = new List<CVRMAMenuItem>();
             foreach (var item in root.GetComponentsInChildren<CVRMAMenuItem>(true))
             {

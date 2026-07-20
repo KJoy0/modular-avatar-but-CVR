@@ -69,10 +69,14 @@ Add via **Add Component → Modular Avatar CVR**, or the
 
 ### Reactive components
 
-React to a parameter — explicit, inherited from the nearest parent MA Menu Item, or
-defaulting to the GameObject name. Int/Float menu items produce correctly typed animator
-conditions (`Equals value` for Int, threshold for Float), so reactive components work
-inside dropdown selections.
+React to a parameter — explicit, or inherited from the nearest parent MA Menu Item.
+Int/Float menu items produce correctly typed animator conditions (`Equals value` for Int,
+threshold for Float), so reactive components work inside dropdown selections.
+
+Shape Changer follows VRC MA's full condition chain: explicit parameter → parent Menu
+Item → an Object Toggle targeting its object (reaction follows that toggle, no extra
+menu entry) → otherwise baked statically at build (Set applied, Delete polygons actually
+removed), or dropped entirely if the object is disabled and nothing toggles it.
 
 | Component | What it does |
 |---|---|

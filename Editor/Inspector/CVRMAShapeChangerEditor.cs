@@ -55,16 +55,13 @@ namespace ModularAvatarCVR.Editor
             serializedObject.ApplyModifiedProperties();
         }
 
-        /// <summary>Shows where the effective parameter comes from when the field is empty.</summary>
+        /// <summary>Shows what condition will drive the reaction when the field is empty.</summary>
         private static void DrawResolvedParameterInfo(CVRMAShapeChanger changer)
         {
             if (!string.IsNullOrEmpty(changer.parameter)) return;
-
-            var item = changer.GetComponentInParent<CVRMAMenuItem>(true);
-            string info = item != null
-                ? $"→ inherits '{item.GetEffectiveMachineName()}' from Menu Item '{item.GetEffectiveLabel()}'"
-                : $"→ standalone toggle '{changer.GetEffectiveParameter()}' (from GameObject name)";
-            EditorGUILayout.LabelField(info, EditorStyles.miniLabel);
+            EditorGUILayout.LabelField(
+                "→ " + CVRMAShapeChangerPass.DescribeConditionSource(changer, out _),
+                EditorStyles.miniLabel);
         }
     }
 

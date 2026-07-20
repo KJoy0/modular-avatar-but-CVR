@@ -204,6 +204,16 @@ namespace ModularAvatarCVR.Editor
 
             public void Sync()
             {
+                // MA reaction model: the changer follows its GameObject's active state.
+                // Disabling the object (or inverse on an enabled one) releases the shapes —
+                // toggling the checkbox previews the reaction live.
+                bool conditionMet = _changer.gameObject.activeInHierarchy != _changer.inverseCondition;
+                if (!conditionMet)
+                {
+                    Restore();
+                    return;
+                }
+
                 SyncDeletePreviews();
                 SyncSetWeights();
             }
