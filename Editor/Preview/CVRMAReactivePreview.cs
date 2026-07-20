@@ -190,50 +190,137 @@ namespace ModularAvatarCVR.Editor
         private sealed class ShapeChangerState : IPreviewState
         {
             private readonly CVRMAShapeChanger _changer;
-            private readonly Dictionary<(SkinnedMeshRenderer, int), float> _originals =
+            private readonly Dictionary<(SkinnedMeshRenderer, int), float> _originalWeights =
                 new Dictionary<(SkinnedMeshRenderer, int), float>();
+            // Delete preview: renderer → (authored mesh, generated cut clone, config hash)
+            private readonly Dictionary<SkinnedMeshRenderer, (Mesh original, Mesh clone, int hash)> _meshSwaps =
+                new Dictionary<SkinnedMeshRenderer, (Mesh, Mesh, int)>();
 
             public ShapeChangerState(CVRMAShapeChanger changer) => _changer = changer;
             public Component Owner => _changer;
 
             public void Sync()
             {
+                SyncDeletePreviews();
+                SyncSetWeights();
+            }
+
+            /// <summary>
+            /// Delete entries preview as actual polygon removal: the renderer temporarily
+            /// gets a clone of its mesh with the displaced triangles cut out. The clone is
+            /// rebuilt only when the configuration changes and never saved.
+            /// </summary>
+            private void SyncDeletePreviews()
+            {
+                var deleteByMesh = new Dictionary<SkinnedMeshRenderer, List<string>>();
+                foreach (var shape in _changer.shapes)
+                {
+                    if (shape?.changeType != CVRMAShapeChangeType.Delete) continue;
+                    if (shape.targetMesh == null || string.IsNullOrEmpty(shape.shapeName)) continue;
+                    if (!deleteByMesh.TryGetValue(shape.targetMesh, out var list))
+                        deleteByMesh[shape.targetMesh] = list = new List<string>();
+                    list.Add(shape.shapeName);
+                }
+
+                foreach (var key in _meshSwaps.Keys.ToList())
+                    if (key == null || !deleteByMesh.ContainsKey(key))
+                        RestoreSwap(key);
+
+                foreach (var kv in deleteByMesh)
+                {
+                    var smr = kv.Key;
+                    var names = kv.Value;
+                    names.Sort();
+
+                    bool hasSwap = _meshSwaps.TryGetValue(smr, out var swap);
+                    var original = hasSwap ? swap.original : smr.sharedMesh;
+                    if (original == null) continue;
+
+                    int hash = (string.Join("|", names), _changer.displacementThreshold,
+                                original.GetInstanceID()).GetHashCode();
+                    if (hasSwap && swap.hash == hash) continue;
+
+                    if (hasSwap) RestoreSwap(smr);
+
+                    var matched = CVRMAShapeChangerPass.ComputeDisplacedVertices(
+                        original, names, _changer.displacementThreshold, _changer.gameObject.name);
+                    if (matched == null) continue;
+
+                    // Cut triangles whose vertices are all displaced (boundary tris stay).
+                    var kept = new List<int>[original.subMeshCount];
+                    for (int s = 0; s < original.subMeshCount; s++)
+                    {
+                        var tris = original.GetTriangles(s);
+                        kept[s] = new List<int>(tris.Length);
+                        for (int t = 0; t < tris.Length; t += 3)
+                        {
+                            if (matched[tris[t]] && matched[tris[t + 1]] && matched[tris[t + 2]]) continue;
+                            kept[s].Add(tris[t]); kept[s].Add(tris[t + 1]); kept[s].Add(tris[t + 2]);
+                        }
+                    }
+
+                    var clone = CVRMAMeshCutterUtil.BuildCompactedMesh(
+                        original, kept, original.name + "_DelPreview");
+                    clone.hideFlags = HideFlags.HideAndDontSave;
+
+                    _meshSwaps[smr] = (original, clone, hash);
+                    smr.sharedMesh = clone;
+                }
+            }
+
+            private void SyncSetWeights()
+            {
                 var desired = new Dictionary<(SkinnedMeshRenderer, int), float>();
                 foreach (var shape in _changer.shapes)
                 {
-                    if (shape?.targetMesh == null || shape.targetMesh.sharedMesh == null) continue;
+                    if (shape?.changeType != CVRMAShapeChangeType.Set) continue;
+                    if (shape.targetMesh == null || shape.targetMesh.sharedMesh == null) continue;
                     if (string.IsNullOrEmpty(shape.shapeName)) continue;
                     int idx = shape.targetMesh.sharedMesh.GetBlendShapeIndex(shape.shapeName);
                     if (idx < 0) continue;
 
-                    desired[(shape.targetMesh, idx)] =
-                        shape.changeType == CVRMAShapeChangeType.Delete ? 0f : shape.value;
+                    desired[(shape.targetMesh, idx)] = shape.value;
                 }
 
                 // Entries removed from the component while previewing go back to authored values.
-                foreach (var key in _originals.Keys.ToList())
+                foreach (var key in _originalWeights.Keys.ToList())
                 {
                     if (desired.ContainsKey(key)) continue;
-                    if (key.Item1 != null) key.Item1.SetBlendShapeWeight(key.Item2, _originals[key]);
-                    _originals.Remove(key);
+                    if (key.Item1 != null) key.Item1.SetBlendShapeWeight(key.Item2, _originalWeights[key]);
+                    _originalWeights.Remove(key);
                 }
 
                 foreach (var kv in desired)
                 {
                     var (smr, idx) = kv.Key;
-                    if (!_originals.ContainsKey(kv.Key))
-                        _originals[kv.Key] = smr.GetBlendShapeWeight(idx);
+                    if (!_originalWeights.ContainsKey(kv.Key))
+                        _originalWeights[kv.Key] = smr.GetBlendShapeWeight(idx);
                     if (!Mathf.Approximately(smr.GetBlendShapeWeight(idx), kv.Value))
                         smr.SetBlendShapeWeight(idx, kv.Value);
                 }
             }
 
+            private void RestoreSwap(SkinnedMeshRenderer smr)
+            {
+                if (_meshSwaps.TryGetValue(smr, out var swap))
+                {
+                    if (smr != null && smr.sharedMesh == swap.clone) smr.sharedMesh = swap.original;
+                    if (swap.clone != null) Object.DestroyImmediate(swap.clone);
+                }
+                // Dictionary.Remove works on the reference even when Unity reports it destroyed.
+                _meshSwaps.Remove(smr);
+            }
+
             public void Restore()
             {
-                foreach (var kv in _originals)
+                foreach (var kv in _originalWeights)
                     if (kv.Key.Item1 != null)
                         kv.Key.Item1.SetBlendShapeWeight(kv.Key.Item2, kv.Value);
-                _originals.Clear();
+                _originalWeights.Clear();
+
+                foreach (var smr in _meshSwaps.Keys.ToList())
+                    RestoreSwap(smr);
+                _meshSwaps.Clear();
             }
         }
 

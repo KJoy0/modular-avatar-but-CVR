@@ -573,7 +573,10 @@ namespace ModularAvatarCVR.Editor
             var dst = Undo.AddComponent<CVRMAShapeChanger>(src.gameObject);
 
             var so = new SerializedObject(src);
-            dst.threshold = so.FindProperty("m_threshold")?.floatValue ?? 0.5f;
+            // MA's m_threshold is the DISPLACEMENT threshold (Delete detection), not an
+            // activation threshold. m_inverted comes from the ReactiveComponent base.
+            dst.displacementThreshold = so.FindProperty("m_threshold")?.floatValue ?? 0.01f;
+            dst.inverseCondition      = so.FindProperty("m_inverted")?.boolValue ?? false;
 
             // ReactiveComponent condition: read parameter from parent context if available
             // MA stores the "condition" on the parent's ObjectToggle or as a direct field
