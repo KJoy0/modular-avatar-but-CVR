@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using System.Collections.Generic;
+using UnityEditor;
 using UnityEngine;
 
 namespace ModularAvatarCVR.Editor
@@ -104,26 +105,81 @@ namespace ModularAvatarCVR.Editor
             }
         }
 
+        private const string TempFolder = "Assets/MA_CVR_Temp";
+
         private static void RemapRenderers(GameObject avatarRoot,
             Dictionary<Transform, Transform> map, HashSet<Transform> eliminate)
         {
+            // mesh → bindpose-corrected clone, so shared meshes are processed once
+            // (renderers sharing a mesh share its rig, so the correction is identical).
+            var correctedMeshes = new Dictionary<Mesh, Mesh>();
+            bool savedAny = false;
+
             foreach (var smr in avatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
             {
                 var bones = smr.bones;
-                bool changed = false;
+                var remapIndices = new List<int>();
                 for (int i = 0; i < bones.Length; i++)
-                {
                     if (bones[i] != null && eliminate.Contains(bones[i]))
+                        remapIndices.Add(i);
+
+                if (remapIndices.Count > 0)
+                {
+                    // Re-skinning onto a bone with a different orientation/scale is only
+                    // correct if the bindpose is adjusted to compensate — otherwise the
+                    // mesh deforms in-game by exactly the orientation difference:
+                    //   newBind = baseBone⁻¹ × outfitBone × oldBind
+                    var mesh = smr.sharedMesh;
+                    if (mesh != null && !correctedMeshes.TryGetValue(mesh, out var corrected))
                     {
-                        bones[i] = map[bones[i]];
-                        changed = true;
+                        var bind = mesh.bindposes;
+                        if (bind.Length == bones.Length)
+                        {
+                            foreach (var i in remapIndices)
+                            {
+                                var outfitBone = bones[i];
+                                var baseBone = map[outfitBone];
+                                bind[i] = baseBone.worldToLocalMatrix * outfitBone.localToWorldMatrix * bind[i];
+                            }
+
+                            corrected = Object.Instantiate(mesh);
+                            corrected.name = mesh.name + "_Merged";
+                            corrected.bindposes = bind;
+
+                            EnsureTempFolder();
+                            AssetDatabase.CreateAsset(corrected,
+                                $"{TempFolder}/MA_CVR_{corrected.name}_{GUID.Generate()}.asset");
+                            savedAny = true;
+                        }
+                        else
+                        {
+                            Debug.LogWarning(
+                                $"[MA-CVR] MergeArmature: '{smr.name}' bindpose count doesn't match its " +
+                                "bone count — re-skinned without bindpose correction (may deform).");
+                            corrected = mesh; // fall back to the uncorrected mesh
+                        }
+                        correctedMeshes[mesh] = corrected;
                     }
+
+                    if (mesh != null && correctedMeshes[mesh] != mesh)
+                        smr.sharedMesh = correctedMeshes[mesh];
+
+                    foreach (var i in remapIndices)
+                        bones[i] = map[bones[i]];
+                    smr.bones = bones;
                 }
-                if (changed) smr.bones = bones;
 
                 if (smr.rootBone != null && eliminate.Contains(smr.rootBone))
                     smr.rootBone = map[smr.rootBone];
             }
+
+            if (savedAny) AssetDatabase.SaveAssets();
+        }
+
+        private static void EnsureTempFolder()
+        {
+            if (!AssetDatabase.IsValidFolder(TempFolder))
+                AssetDatabase.CreateFolder("Assets", "MA_CVR_Temp");
         }
 
         private static void MergeHierarchy(CVRMAMergeArmature merger, Transform outfitParent,
