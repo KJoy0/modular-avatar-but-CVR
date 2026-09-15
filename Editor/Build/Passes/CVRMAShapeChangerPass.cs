@@ -134,7 +134,9 @@ namespace ModularAvatarCVR.Editor
                 if (toggle.objects == null) continue;
                 foreach (var entry in toggle.objects)
                 {
-                    if (entry?.target == null) continue;
+                    // Component entries only disable a component — the object stays
+                    // visible, so they don't drive this reaction's condition.
+                    if (entry == null || entry.TogglesComponent || entry.target == null) continue;
                     if (t == entry.target || t.IsChildOf(entry.target))
                         return (toggle, entry.activeWhenOn);
                 }

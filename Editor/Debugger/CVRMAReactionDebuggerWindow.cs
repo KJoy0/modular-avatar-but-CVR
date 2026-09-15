@@ -204,7 +204,11 @@ namespace ModularAvatarCVR.Editor
                     int del = sc.shapes?.Count(s => s.changeType == CVRMAShapeChangeType.Delete) ?? 0;
                     return $"{set} set, {del} delete{(sc.inverseCondition ? "  (inverse)" : "")}";
                 case CVRMAObjectToggle ot:
-                    return $"{ot.objects?.Count ?? 0} object(s)";
+                    int components = ot.objects?.Count(o => o != null && o.TogglesComponent) ?? 0;
+                    int gameObjects = (ot.objects?.Count ?? 0) - components;
+                    return components > 0
+                        ? $"{gameObjects} object(s), {components} component(s)"
+                        : $"{gameObjects} object(s)";
                 case CVRMAMaterialSwap ms:
                     return $"{ms.swaps?.Count ?? 0} swap(s)";
                 case CVRMAMaterialSetter st:
@@ -234,9 +238,26 @@ namespace ModularAvatarCVR.Editor
 
                 case CVRMAObjectToggle ot:
                     if (ot.objects == null || ot.objects.Count == 0)
+                    {
                         yield return "no objects configured";
-                    else if (ot.objects.Any(o => o?.target == null))
-                        yield return "entry with missing target object";
+                        break;
+                    }
+                    if (ot.objects.Any(o => o == null || o.TargetTransform == null))
+                        yield return "entry with missing target";
+
+                    foreach (var entry in ot.objects.Where(o => o?.component != null))
+                        if (!CVRMAToggledObject.CanToggle(entry.component))
+                            yield return $"{entry.component.GetType().Name} on " +
+                                         $"'{entry.component.gameObject.name}' has no enabled state";
+
+                    // Unity binds component curves by type+path, so same-type siblings collide.
+                    var collisions = ot.objects
+                        .Where(o => o?.component != null && CVRMAToggledObject.CanToggle(o.component))
+                        .GroupBy(o => (owner: o.component.transform, type: o.component.GetType()))
+                        .Where(g => g.Count() > 1);
+                    foreach (var group in collisions)
+                        yield return $"'{group.Key.owner.name}' has {group.Count()} {group.Key.type.Name} " +
+                                     "entries — only the first can be driven";
                     break;
 
                 case CVRMAMaterialSwap ms:

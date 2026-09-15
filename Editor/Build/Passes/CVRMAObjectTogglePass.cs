@@ -82,14 +82,47 @@ namespace ModularAvatarCVR.Editor
             var offClip = new AnimationClip { name = $"{machineName}_ObjToggle_Off" };
             bool anyKeyframes = false;
 
+            // Unity binds component curves by type+path, so two components of the same
+            // type on one object can't be told apart — warn instead of silently driving
+            // only the first.
+            var seenComponentBindings = new HashSet<(string path, System.Type type)>();
+
             foreach (var obj in toggle.objects)
             {
-                if (obj.target == null) continue;
-                var path = GetPath(avatarRoot.transform, obj.target);
+                var targetTransform = obj.TargetTransform;
+                if (targetTransform == null) continue;
+                var path = GetPath(avatarRoot.transform, targetTransform);
                 if (path == null) continue;
 
-                SetActiveKey(onClip,  path, obj.activeWhenOn);
-                SetActiveKey(offClip, path, !obj.activeWhenOn);
+                if (obj.TogglesComponent)
+                {
+                    var component = obj.component;
+                    if (!CVRMAToggledObject.CanToggle(component))
+                    {
+                        Debug.LogWarning(
+                            $"[MA-CVR] ObjectToggle '{toggle.gameObject.name}': {component.GetType().Name} on " +
+                            $"'{targetTransform.name}' has no enabled state and can't be toggled — skipped.");
+                        continue;
+                    }
+
+                    var type = component.GetType();
+                    if (!seenComponentBindings.Add((path, type)))
+                    {
+                        Debug.LogWarning(
+                            $"[MA-CVR] ObjectToggle '{toggle.gameObject.name}': '{targetTransform.name}' has more " +
+                            $"than one {type.Name} in this toggle. Unity animates components by type, so only the " +
+                            "first is driven — split the extras onto separate GameObjects.");
+                        continue;
+                    }
+
+                    SetEnabledKey(onClip,  path, type, obj.activeWhenOn);
+                    SetEnabledKey(offClip, path, type, !obj.activeWhenOn);
+                }
+                else
+                {
+                    SetActiveKey(onClip,  path, obj.activeWhenOn);
+                    SetActiveKey(offClip, path, !obj.activeWhenOn);
+                }
                 anyKeyframes = true;
             }
 
@@ -105,17 +138,24 @@ namespace ModularAvatarCVR.Editor
                 machineName, onClip, offClip, toggle.defaultValue, paramType, compareValue);
         }
 
-        private static void SetActiveKey(AnimationClip clip, string path, bool active)
+        private static void SetActiveKey(AnimationClip clip, string path, bool active) =>
+            SetBoolKey(clip, path, typeof(GameObject), "m_IsActive", active);
+
+        private static void SetEnabledKey(AnimationClip clip, string path, System.Type type, bool enabled) =>
+            SetBoolKey(clip, path, type, "m_Enabled", enabled);
+
+        private static void SetBoolKey(
+            AnimationClip clip, string path, System.Type type, string propertyName, bool value)
         {
             var binding = new EditorCurveBinding
             {
                 path         = path,
-                type         = typeof(GameObject),
-                propertyName = "m_IsActive"
+                type         = type,
+                propertyName = propertyName
             };
             var curve = new AnimationCurve(
-                new Keyframe(0f,       active ? 1f : 0f),
-                new Keyframe(1f / 60f, active ? 1f : 0f)
+                new Keyframe(0f,       value ? 1f : 0f),
+                new Keyframe(1f / 60f, value ? 1f : 0f)
             );
             AnimationUtility.SetEditorCurve(clip, binding, curve);
         }

@@ -343,6 +343,7 @@ namespace ModularAvatarCVR.Editor
         {
             private readonly CVRMAObjectToggle _toggle;
             private readonly Dictionary<GameObject, bool> _originals = new Dictionary<GameObject, bool>();
+            private readonly Dictionary<Component, bool> _originalEnabled = new Dictionary<Component, bool>();
 
             public ObjectToggleState(CVRMAObjectToggle toggle) => _toggle = toggle;
             public Component Owner => _toggle;
@@ -350,15 +351,34 @@ namespace ModularAvatarCVR.Editor
             public void Sync()
             {
                 var desired = new Dictionary<GameObject, bool>();
+                var desiredComponents = new Dictionary<Component, bool>();
+
                 foreach (var obj in _toggle.objects)
-                    if (obj?.target != null)
+                {
+                    if (obj == null) continue;
+                    if (obj.TogglesComponent)
+                    {
+                        if (CVRMAToggledObject.CanToggle(obj.component))
+                            desiredComponents[obj.component] = obj.activeWhenOn;
+                    }
+                    else if (obj.target != null)
+                    {
                         desired[obj.target.gameObject] = obj.activeWhenOn;
+                    }
+                }
 
                 foreach (var key in _originals.Keys.ToList())
                 {
                     if (desired.ContainsKey(key)) continue;
                     if (key != null) key.SetActive(_originals[key]);
                     _originals.Remove(key);
+                }
+
+                foreach (var key in _originalEnabled.Keys.ToList())
+                {
+                    if (desiredComponents.ContainsKey(key)) continue;
+                    if (key != null) CVRMAToggledObject.SetEnabled(key, _originalEnabled[key]);
+                    _originalEnabled.Remove(key);
                 }
 
                 foreach (var kv in desired)
@@ -368,6 +388,14 @@ namespace ModularAvatarCVR.Editor
                     if (kv.Key.activeSelf != kv.Value)
                         kv.Key.SetActive(kv.Value);
                 }
+
+                foreach (var kv in desiredComponents)
+                {
+                    if (!_originalEnabled.ContainsKey(kv.Key))
+                        _originalEnabled[kv.Key] = CVRMAToggledObject.GetEnabled(kv.Key);
+                    if (CVRMAToggledObject.GetEnabled(kv.Key) != kv.Value)
+                        CVRMAToggledObject.SetEnabled(kv.Key, kv.Value);
+                }
             }
 
             public void Restore()
@@ -376,6 +404,11 @@ namespace ModularAvatarCVR.Editor
                     if (kv.Key != null && kv.Key.activeSelf != kv.Value)
                         kv.Key.SetActive(kv.Value);
                 _originals.Clear();
+
+                foreach (var kv in _originalEnabled)
+                    if (kv.Key != null && CVRMAToggledObject.GetEnabled(kv.Key) != kv.Value)
+                        CVRMAToggledObject.SetEnabled(kv.Key, kv.Value);
+                _originalEnabled.Clear();
             }
         }
 

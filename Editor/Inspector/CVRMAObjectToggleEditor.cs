@@ -28,16 +28,18 @@ namespace ModularAvatarCVR.Editor
 
             EditorGUILayout.LabelField("MA Object Toggle", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
-                "Toggles GameObjects when the parameter is active.\n" +
-                "Click 'Apply to AAS' to write the entry to the avatar's Advanced Settings " +
-                "immediately (without building), so you can preview it in the CCK inspector.",
+                "Toggles GameObjects — or individual components — when the parameter is active.\n" +
+                "Drop a GameObject to toggle its active state, or use 'Add Components' to toggle " +
+                "just a component's enabled state (Magica Cloth, colliders, audio, particles…).",
                 MessageType.None);
 
             EditorGUILayout.Space(4);
             EditorGUILayout.PropertyField(_label,        new GUIContent("Label"));
             EditorGUILayout.PropertyField(_parameter,    new GUIContent("Parameter"));
             EditorGUILayout.PropertyField(_defaultValue, new GUIContent("Default (ON)"));
-            EditorGUILayout.PropertyField(_objects,      new GUIContent("Toggled Objects"), true);
+            EditorGUILayout.PropertyField(_objects,      new GUIContent("Toggled Targets"), true);
+
+            DrawAddComponentsButton((CVRMAObjectToggle)target);
 
             CVRMAReactivePreview.DrawPreviewToggle((CVRMAObjectToggle)target);
             CVRMAReactionDebuggerWindow.DrawOpenButton();
@@ -71,6 +73,97 @@ namespace ModularAvatarCVR.Editor
             }
 
             serializedObject.ApplyModifiedProperties();
+        }
+
+        private const int MaxMenuEntries = 250;
+
+        /// <summary>
+        /// The "automatic" path for component targets: lists every togglable component
+        /// under the GameObjects already in the list, so they can be added in one click
+        /// instead of being dragged in one at a time.
+        /// </summary>
+        private static void DrawAddComponentsButton(CVRMAObjectToggle toggle)
+        {
+            var roots = new List<Transform>();
+            foreach (var entry in toggle.objects)
+                if (entry != null && !entry.TogglesComponent && entry.target != null)
+                    roots.Add(entry.target);
+
+            using (new EditorGUI.DisabledScope(roots.Count == 0))
+            {
+                if (GUILayout.Button(new GUIContent("Add Components…",
+                        "Pick components under the toggled GameObjects to toggle individually.")))
+                    ShowComponentMenu(toggle, roots);
+            }
+
+            if (roots.Count == 0)
+                EditorGUILayout.LabelField(
+                    "Add a GameObject target first to pick components from it.", EditorStyles.miniLabel);
+        }
+
+        private static void ShowComponentMenu(CVRMAObjectToggle toggle, List<Transform> roots)
+        {
+            var already = new HashSet<Component>();
+            foreach (var entry in toggle.objects)
+                if (entry?.component != null) already.Add(entry.component);
+
+            var menu = new GenericMenu();
+            var usedLabels = new HashSet<string>();
+            int shown = 0;
+
+            foreach (var root in roots)
+            {
+                foreach (var component in root.GetComponentsInChildren<Component>(true))
+                {
+                    if (component == null || shown >= MaxMenuEntries) continue;
+                    if (!CVRMAToggledObject.CanToggle(component)) continue;
+                    if (component is CVRMAComponent) continue; // our own build-time markers
+
+                    var relative = RelativePath(root, component.transform);
+                    var label = string.IsNullOrEmpty(relative)
+                        ? $"{root.name}/{component.GetType().Name}"
+                        : $"{root.name}/{relative}/{component.GetType().Name}";
+
+                    // GenericMenu drops duplicate labels — disambiguate same-type siblings.
+                    var unique = label;
+                    for (int i = 2; !usedLabels.Add(unique); i++) unique = $"{label} ({i})";
+
+                    var captured = component;
+                    if (already.Contains(component))
+                        menu.AddDisabledItem(new GUIContent(unique), true);
+                    else
+                        menu.AddItem(new GUIContent(unique), false, () => AddComponentEntry(toggle, captured));
+                    shown++;
+                }
+            }
+
+            if (shown == 0)
+                menu.AddDisabledItem(new GUIContent("No togglable components found"));
+            else if (shown >= MaxMenuEntries)
+                menu.AddDisabledItem(new GUIContent($"… truncated at {MaxMenuEntries} entries"));
+
+            menu.ShowAsContext();
+        }
+
+        private static void AddComponentEntry(CVRMAObjectToggle toggle, Component component)
+        {
+            Undo.RecordObject(toggle, "Add component toggle");
+            toggle.objects.Add(new CVRMAToggledObject
+            {
+                component    = component,
+                target       = component.transform,
+                activeWhenOn = true
+            });
+            EditorUtility.SetDirty(toggle);
+        }
+
+        private static string RelativePath(Transform root, Transform t)
+        {
+            if (t == root) return "";
+            var parts = new List<string>();
+            var cur = t;
+            while (cur != null && cur != root) { parts.Insert(0, cur.name); cur = cur.parent; }
+            return cur == null ? t.name : string.Join("/", parts);
         }
 
         private static void ApplyToAAS(CVRMAObjectToggle toggle, GameObject avatarRoot)
@@ -116,6 +209,85 @@ namespace ModularAvatarCVR.Editor
                 t = t.parent;
             }
             return null;
+        }
+    }
+
+    /// <summary>
+    /// One compact row per target: a single field that accepts either a GameObject
+    /// (its active state is toggled) or a Component (its enabled state is toggled),
+    /// plus the ON-state checkbox.
+    /// </summary>
+    [CustomPropertyDrawer(typeof(CVRMAToggledObject))]
+    internal class CVRMAToggledObjectDrawer : PropertyDrawer
+    {
+        private const float ToggleWidth = 44f;
+        private const float Pad = 2f;
+
+        public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
+        {
+            EditorGUI.BeginProperty(position, label, property);
+
+            var targetProp    = property.FindPropertyRelative("target");
+            var componentProp = property.FindPropertyRelative("component");
+            var activeProp    = property.FindPropertyRelative("activeWhenOn");
+
+            float line = EditorGUIUtility.singleLineHeight;
+            var fieldRect  = new Rect(position.x, position.y, position.width - ToggleWidth - 4f, line);
+            var toggleRect = new Rect(position.x + position.width - ToggleWidth, position.y, ToggleWidth, line);
+
+            var component = componentProp.objectReferenceValue as Component;
+            var targetTransform = targetProp.objectReferenceValue as Transform;
+            UnityEngine.Object current = component != null
+                ? component
+                : (targetTransform != null ? targetTransform.gameObject : null);
+
+            EditorGUI.BeginChangeCheck();
+            var next = EditorGUI.ObjectField(
+                fieldRect, GUIContent.none, current, typeof(UnityEngine.Object), true);
+            if (EditorGUI.EndChangeCheck())
+            {
+                switch (next)
+                {
+                    case GameObject go:
+                        targetProp.objectReferenceValue = go.transform;
+                        componentProp.objectReferenceValue = null;
+                        break;
+                    case Component c:
+                        componentProp.objectReferenceValue = c;
+                        targetProp.objectReferenceValue = c.transform;
+                        break;
+                    case null:
+                        targetProp.objectReferenceValue = null;
+                        componentProp.objectReferenceValue = null;
+                        break;
+                    // Anything else (a material, a texture…) is rejected: keep the old value.
+                }
+            }
+
+            activeProp.boolValue = EditorGUI.ToggleLeft(toggleRect,
+                new GUIContent("ON", "Target is active/enabled while the parameter is ON."),
+                activeProp.boolValue);
+
+            if (component != null && !CVRMAToggledObject.CanToggle(component))
+            {
+                var warnRect = new Rect(position.x, position.y + line + Pad, position.width, line);
+                var prev = GUI.contentColor;
+                GUI.contentColor = new Color(1f, 0.75f, 0.3f);
+                EditorGUI.LabelField(warnRect,
+                    $"⚠ {component.GetType().Name} has no enabled state — this entry is skipped.",
+                    EditorStyles.miniLabel);
+                GUI.contentColor = prev;
+            }
+
+            EditorGUI.EndProperty();
+        }
+
+        public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
+        {
+            float line = EditorGUIUtility.singleLineHeight;
+            var component = property.FindPropertyRelative("component").objectReferenceValue as Component;
+            bool warn = component != null && !CVRMAToggledObject.CanToggle(component);
+            return warn ? 2 * line + Pad : line;
         }
     }
 }
