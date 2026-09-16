@@ -80,7 +80,7 @@ removed), or dropped entirely if the object is disabled and nothing toggles it.
 
 | Component | What it does |
 |---|---|
-| **MA Object Toggle** | Shows/hides GameObjects, or enables/disables individual components (Magica Cloth, colliders, audio, particles…). Each entry can invert; "Add Components" lists togglable components under the targeted objects. |
+| **MA Object Toggle** | Shows/hides GameObjects, or enables/disables individual components (Magica Cloth, colliders, audio, particles…). Each entry can invert; drag in a Hierarchy multi-selection, or use "Add Components" to list togglable components under the targeted objects. |
 | **MA Shape Changer** | Sets or deletes blendshapes while active. |
 | **MA Material Swap** | Swaps materials (from → to) on all renderers under a root. |
 | **MA Material Setter** | Sets a specific material slot on a specific renderer. |

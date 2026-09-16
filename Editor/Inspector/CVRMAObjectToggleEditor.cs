@@ -29,8 +29,8 @@ namespace ModularAvatarCVR.Editor
             EditorGUILayout.LabelField("MA Object Toggle", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "Toggles GameObjects — or individual components — when the parameter is active.\n" +
-                "Drop a GameObject to toggle its active state, or use 'Add Components' to toggle " +
-                "just a component's enabled state (Magica Cloth, colliders, audio, particles…).",
+                "Drag objects in from the Hierarchy (multi-select works), or use 'Add Components' " +
+                "to toggle just a component's enabled state (Magica Cloth, colliders, audio, particles…).",
                 MessageType.None);
 
             EditorGUILayout.Space(4);
@@ -39,7 +39,13 @@ namespace ModularAvatarCVR.Editor
             EditorGUILayout.PropertyField(_defaultValue, new GUIContent("Default (ON)"));
             EditorGUILayout.PropertyField(_objects,      new GUIContent("Toggled Targets"), true);
 
+            // Apply list edits before the drop area mutates the list directly.
+            serializedObject.ApplyModifiedProperties();
+
+            DrawDropArea((CVRMAObjectToggle)target);
             DrawAddComponentsButton((CVRMAObjectToggle)target);
+
+            serializedObject.Update();
 
             CVRMAReactivePreview.DrawPreviewToggle((CVRMAObjectToggle)target);
             CVRMAReactionDebuggerWindow.DrawOpenButton();
@@ -76,6 +82,95 @@ namespace ModularAvatarCVR.Editor
         }
 
         private const int MaxMenuEntries = 250;
+        private static GUIStyle _dropStyle;
+
+        /// <summary>
+        /// Drop zone accepting a whole Hierarchy multi-selection at once: GameObjects
+        /// become active-state entries, Components become enabled-state entries.
+        /// </summary>
+        private static void DrawDropArea(CVRMAObjectToggle toggle)
+        {
+            if (_dropStyle == null)
+                _dropStyle = new GUIStyle(EditorStyles.helpBox)
+                {
+                    alignment = TextAnchor.MiddleCenter,
+                    fontSize = 11
+                };
+
+            var rect = GUILayoutUtility.GetRect(0f, 34f, GUILayout.ExpandWidth(true));
+            var evt = Event.current;
+            bool hovering = rect.Contains(evt.mousePosition) &&
+                            (evt.type == EventType.DragUpdated || evt.type == EventType.DragPerform);
+
+            var prev = GUI.color;
+            if (hovering && HasDroppableObjects()) GUI.color = new Color(0.6f, 1f, 0.6f);
+            GUI.Box(rect, "Drag GameObjects or Components here", _dropStyle);
+            GUI.color = prev;
+
+            if (!rect.Contains(evt.mousePosition)) return;
+
+            switch (evt.type)
+            {
+                case EventType.DragUpdated:
+                    DragAndDrop.visualMode = HasDroppableObjects()
+                        ? DragAndDropVisualMode.Link
+                        : DragAndDropVisualMode.Rejected;
+                    evt.Use();
+                    break;
+
+                case EventType.DragPerform:
+                    DragAndDrop.AcceptDrag();
+                    AddDroppedObjects(toggle, DragAndDrop.objectReferences);
+                    evt.Use();
+                    break;
+            }
+        }
+
+        private static bool HasDroppableObjects()
+        {
+            foreach (var obj in DragAndDrop.objectReferences)
+            {
+                if (obj is GameObject) return true;
+                if (obj is Component c && CVRMAToggledObject.CanToggle(c)) return true;
+            }
+            return false;
+        }
+
+        private static void AddDroppedObjects(CVRMAObjectToggle toggle, UnityEngine.Object[] dropped)
+        {
+            var existingObjects = new HashSet<Transform>();
+            var existingComponents = new HashSet<Component>();
+            foreach (var entry in toggle.objects)
+            {
+                if (entry == null) continue;
+                if (entry.TogglesComponent) existingComponents.Add(entry.component);
+                else if (entry.target != null) existingObjects.Add(entry.target);
+            }
+
+            var added = new List<CVRMAToggledObject>();
+            foreach (var obj in dropped)
+            {
+                switch (obj)
+                {
+                    case GameObject go when existingObjects.Add(go.transform):
+                        added.Add(new CVRMAToggledObject { target = go.transform, activeWhenOn = true });
+                        break;
+
+                    case Component c when CVRMAToggledObject.CanToggle(c) && existingComponents.Add(c):
+                        added.Add(new CVRMAToggledObject
+                        {
+                            component = c, target = c.transform, activeWhenOn = true
+                        });
+                        break;
+                }
+            }
+
+            if (added.Count == 0) return;
+
+            Undo.RecordObject(toggle, added.Count == 1 ? "Add toggle target" : "Add toggle targets");
+            toggle.objects.AddRange(added);
+            EditorUtility.SetDirty(toggle);
+        }
 
         /// <summary>
         /// The "automatic" path for component targets: lists every togglable component
