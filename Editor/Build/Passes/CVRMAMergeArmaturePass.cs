@@ -17,6 +17,12 @@ namespace ModularAvatarCVR.Editor
     /// Outfit bones that carry dynamics or other components (PhysBone, Magica Cloth, colliders,
     /// constraints, renderers…) are KEPT and reparented under their corresponding base bone, so
     /// their behaviour is preserved; the mesh continues to skin to them.
+    ///
+    /// Components that merely REFERENCE an eliminated bone are handled separately: Magica Cloth
+    /// points at its root bones from the outfit root rather than from the bones themselves, so
+    /// those bones look empty and would be removed with the reference left dangling. Every such
+    /// reference is repointed at the base bone before anything is destroyed — see
+    /// CVRMAReferenceRemapUtil.
     /// </summary>
     internal static class CVRMAMergeArmaturePass
     {
@@ -71,6 +77,29 @@ namespace ModularAvatarCVR.Editor
                 // 3. Re-skin renderers: any bone reference pointing at an eliminated outfit bone
                 //    is repointed to the base bone. Kept bones are left alone.
                 RemapRenderers(avatarRoot, map, eliminate);
+
+                // 3b. Repoint every OTHER component reference off the bones we are about to
+                //     destroy — Magica Cloth root bones, collider symmetry targets, renderer probe
+                //     anchors, constraints, MA-CVR components. Nothing else in the package does
+                //     this, so without it those references are simply left null after the build.
+                //
+                //     ORDER IS LOAD-BEARING: this must run AFTER RemapRenderers (which needs the
+                //     doomed bone's localToWorldMatrix for its bindpose correction, and whose
+                //     remapIndices would come back empty if the bones were already repointed —
+                //     silently reintroducing in-game outfit deformation) and BEFORE MergeHierarchy
+                //     destroys anything.
+                if (eliminate.Count > 0)
+                {
+                    var replacements = new Dictionary<Transform, Transform>(eliminate.Count);
+                    foreach (var doomed in eliminate) replacements[doomed] = map[doomed];
+
+                    int repointed = CVRMAReferenceRemapUtil.RemapReferences(
+                        avatarRoot, replacements, "MergeArmature");
+                    if (repointed > 0)
+                        Debug.Log(
+                            $"[MA-CVR] MergeArmature on '{merger.gameObject.name}': repointed " +
+                            $"{repointed} reference(s) off {eliminate.Count} removed bone(s).");
+                }
 
                 // 4. Restructure the hierarchy: eliminate redundant bones, reparent kept bones
                 //    and unmatched objects under the correct base bone (world pose preserved).
