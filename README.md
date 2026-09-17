@@ -126,6 +126,18 @@ report (Convert / Remove / Manual) before touching anything.
 
 ---
 
+## Manual bake
+
+**Tools → Modular Avatar CVR → Manual Bake Avatar**
+
+Duplicates the selected avatar and runs the entire pipeline on the copy, so you can
+inspect exactly what gets uploaded — merged armatures, cut meshes, generated animator
+layers, AAS entries — without uploading anything. The original is hidden and one Ctrl+Z
+reverses the whole bake.
+
+Generated assets are moved out of the temp folder into `Assets/MA_CVR_Baked/<avatar> <date>/`
+so the copy survives later uploads; **Clean Up Baked Assets** deletes them all when you're done.
+
 ## Build pipeline
 
 `CVRMABuildProcessor` runs all passes in `OnPreProcessAvatar`:
@@ -152,5 +164,5 @@ cleaned up after the build. Source assets are never modified.
 | Sync Parameter Sequence, VRChat Settings, MMD Layer Control | VRC platform/world conventions |
 | Extract Menu | CVR AAS is a flat list — nothing to extract |
 
-Not yet built (candidates): Move Independently, Manual Bake Avatar.
+Not yet built (candidates): Move Independently.
 and yes some or most is ai sloppa

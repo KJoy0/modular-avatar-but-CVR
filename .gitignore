@@ -2,6 +2,7 @@
 # Asset .meta files (scripts etc.) ARE tracked: they hold GUIDs that
 # other projects/scenes may reference, so losing them breaks links.
 Editor.meta
+Editor/Bake.meta
 Editor/Build.meta
 Editor/Debugger.meta
 Editor/Build/Passes.meta
