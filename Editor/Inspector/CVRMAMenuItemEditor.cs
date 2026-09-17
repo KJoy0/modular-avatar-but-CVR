@@ -34,7 +34,7 @@ namespace ModularAvatarCVR.Editor
         {
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("MA Menu Item", EditorStyles.boldLabel);
+            CVRMAInspectorUI.DrawHeader(target as Component, "MA Menu Item");
             EditorGUILayout.Space(2);
 
             EditorGUILayout.PropertyField(_label, new GUIContent("Label", "Display name in CVR Quick Menu (uses GameObject name if empty)"));

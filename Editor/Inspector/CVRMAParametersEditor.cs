@@ -15,7 +15,7 @@ namespace ModularAvatarCVR.Editor
         {
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("MA Parameters", EditorStyles.boldLabel);
+            CVRMAInspectorUI.DrawHeader(target as Component, "MA Parameters");
             EditorGUILayout.HelpBox(
                 "Declares animator parameters and maps them to CVR Advanced Avatar Settings.\n\n" +
                 "• Bool → AAS Toggle\n" +

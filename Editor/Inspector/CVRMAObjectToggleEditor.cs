@@ -26,7 +26,7 @@ namespace ModularAvatarCVR.Editor
         {
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("MA Object Toggle", EditorStyles.boldLabel);
+            CVRMAInspectorUI.DrawHeader(target as Component, "MA Object Toggle");
             EditorGUILayout.HelpBox(
                 "Toggles GameObjects — or individual components — when the parameter is active.\n" +
                 "Drag objects in from the Hierarchy (multi-select works), or use 'Add Components' " +

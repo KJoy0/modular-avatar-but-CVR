@@ -11,7 +11,7 @@ namespace ModularAvatarCVR.Editor
         {
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("MA Material Setter", EditorStyles.boldLabel);
+            CVRMAInspectorUI.DrawHeader(target as Component, "MA Material Setter");
             EditorGUILayout.HelpBox(
                 "Sets specific material slots on renderers while the parameter is active. " +
                 "At build time an AAS Toggle + animator layer is generated.",

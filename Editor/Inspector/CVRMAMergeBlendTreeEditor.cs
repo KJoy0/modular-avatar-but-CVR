@@ -24,7 +24,7 @@ namespace ModularAvatarCVR.Editor
         {
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("MA Merge Blend Tree", EditorStyles.boldLabel);
+            CVRMAInspectorUI.DrawHeader(target as Component, "MA Merge Blend Tree");
             EditorGUILayout.HelpBox(
                 "Wraps a BlendTree or AnimationClip into a single-state animator layer " +
                 "and merges it into the avatar's animator at build time.\n\n" +

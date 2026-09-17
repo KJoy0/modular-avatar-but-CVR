@@ -11,7 +11,7 @@ namespace ModularAvatarCVR.Editor
         {
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("MA Merge Animator", EditorStyles.boldLabel);
+            CVRMAInspectorUI.DrawHeader(target as Component, "MA Merge Animator");
             EditorGUILayout.HelpBox(
                 "Merges an AnimatorController into the avatar's override controller at build time.\n" +
                 "Relative path mode re-prefixes all animation bindings to this object's position in the hierarchy.",

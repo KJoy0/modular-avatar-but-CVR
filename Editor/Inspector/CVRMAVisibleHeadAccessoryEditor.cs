@@ -20,7 +20,7 @@ namespace ModularAvatarCVR.Editor
         {
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("MA Visible Head Accessory", EditorStyles.boldLabel);
+            CVRMAInspectorUI.DrawHeader(target as Component, "MA Visible Head Accessory");
             EditorGUILayout.HelpBox(
                 "Keeps this object visible in first-person view.\n\n" +
                 "At build time an FPRExclusion component (isShown = true) is added, " +

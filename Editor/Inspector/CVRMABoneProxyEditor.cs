@@ -27,7 +27,7 @@ namespace ModularAvatarCVR.Editor
         {
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("MA Bone Proxy", EditorStyles.boldLabel);
+            CVRMAInspectorUI.DrawHeader(target as Component, "MA Bone Proxy");
             EditorGUILayout.HelpBox(
                 "Reparents this object onto a humanoid bone at build time. " +
                 "The target is identified by a bone reference, so the same setup works " +

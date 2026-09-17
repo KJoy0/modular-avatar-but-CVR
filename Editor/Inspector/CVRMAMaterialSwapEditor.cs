@@ -11,7 +11,7 @@ namespace ModularAvatarCVR.Editor
         {
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("MA Material Swap", EditorStyles.boldLabel);
+            CVRMAInspectorUI.DrawHeader(target as Component, "MA Material Swap");
             EditorGUILayout.HelpBox(
                 "Swaps materials (From → To) on every renderer under the swap root while " +
                 "the parameter is active. At build time an AAS Toggle + animator layer is generated.",

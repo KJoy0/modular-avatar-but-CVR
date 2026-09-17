@@ -11,7 +11,7 @@ namespace ModularAvatarCVR.Editor
         {
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("MA Merge Armature", EditorStyles.boldLabel);
+            CVRMAInspectorUI.DrawHeader(target as Component, "MA Merge Armature");
             EditorGUILayout.HelpBox(
                 "Merges this object's armature into the target armature at build time. " +
                 "Bone names are matched after stripping the prefix/suffix — which is " +

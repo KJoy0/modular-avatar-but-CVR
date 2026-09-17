@@ -39,7 +39,7 @@ namespace ModularAvatarCVR.Editor
         {
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("MA Mesh Cutter", EditorStyles.boldLabel);
+            CVRMAInspectorUI.DrawHeader(target as Component, "MA Mesh Cutter");
             EditorGUILayout.HelpBox(
                 "Cuts the portion of a mesh selected by the vertex filters at build time.\n\n" +
                 "Delete removes it permanently (on a cloned mesh — the original asset is safe). " +

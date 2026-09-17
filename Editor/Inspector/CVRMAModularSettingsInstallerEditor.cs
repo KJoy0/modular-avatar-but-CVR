@@ -23,7 +23,7 @@ namespace ModularAvatarCVR.Editor
         {
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("MA Modular Settings Installer", EditorStyles.boldLabel);
+            CVRMAInspectorUI.DrawHeader(target as Component, "MA Modular Settings Installer");
             EditorGUILayout.HelpBox(
                 "Installs one or more reusable Modular Settings assets onto the avatar.\n\n" +
                 "At build time the entries from each asset are appended to the avatar's " +

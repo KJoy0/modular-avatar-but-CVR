@@ -28,7 +28,7 @@ namespace ModularAvatarCVR.Editor
         {
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("MA Shape Changer", EditorStyles.boldLabel);
+            CVRMAInspectorUI.DrawHeader(target as Component, "MA Shape Changer");
             EditorGUILayout.HelpBox(
                 "Set: drives the blendshape to a value while the parameter is active.\n" +
                 "Delete: removes the polygons the blendshape displaces while active " +

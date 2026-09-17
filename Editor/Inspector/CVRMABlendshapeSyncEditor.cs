@@ -15,7 +15,7 @@ namespace ModularAvatarCVR.Editor
         {
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("MA Blendshape Sync", EditorStyles.boldLabel);
+            CVRMAInspectorUI.DrawHeader(target as Component, "MA Blendshape Sync");
             EditorGUILayout.HelpBox(
                 "Mirrors blendshape values from a source mesh to a target mesh at build time.\n\n" +
                 "Each entry maps one blendshape on this object's mesh to a blendshape on another mesh. " +

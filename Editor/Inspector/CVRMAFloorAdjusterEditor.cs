@@ -9,7 +9,7 @@ namespace ModularAvatarCVR.Editor
     {
         public override void OnInspectorGUI()
         {
-            EditorGUILayout.LabelField("MA Floor Adjuster", EditorStyles.boldLabel);
+            CVRMAInspectorUI.DrawHeader(target as Component, "MA Floor Adjuster");
             EditorGUILayout.HelpBox(
                 "Position this GameObject vertically at the bottom of your shoes " +
                 "(a side-on orthographic view helps).\n\n" +
