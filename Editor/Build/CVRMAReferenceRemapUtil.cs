@@ -26,6 +26,24 @@ namespace ModularAvatarCVR.Editor
         private const int MaxChainHops = 16;
 
         /// <summary>
+        /// Root properties that describe a component's place in the object graph rather than a
+        /// reference it holds. These must NEVER be rewritten.
+        ///
+        /// m_GameObject is the dangerous one: a doomed object's GameObject is in the lookup, so a
+        /// component still sitting on it at remap time (a duplicate collider awaiting deletion)
+        /// would have its owner repointed at the surviving object. Unity's native side then has a
+        /// component whose owner disagrees with the GameObject actually holding it, and destroying
+        /// that GameObject segfaults inside PreDestroyRecursive.
+        /// </summary>
+        private static readonly HashSet<string> StructuralProperties = new HashSet<string>
+        {
+            "m_Script",                    // the MonoScript backing this component
+            "m_GameObject",                // the component's owner
+            "m_Father", "m_Children",      // hierarchy links (Transforms are skipped anyway)
+            "m_PrefabInstance", "m_PrefabAsset", "m_CorrespondingSourceObject", // prefab linkage
+        };
+
+        /// <summary>
         /// Caches, per serialized element type name, whether that type's subtree can hold an object
         /// reference — so huge primitive arrays (Magica's baked pose data) are skipped after being
         /// probed once. Shared across every call in a build.
@@ -59,6 +77,10 @@ namespace ModularAvatarCVR.Editor
                 // would reparent objects without fixing sibling lists — instant hierarchy
                 // corruption. Covers RectTransform too, since it derives from Transform.
                 if (component is Transform) continue;
+
+                // A component that is itself being replaced is on its way out; rewriting its
+                // innards is pointless and only risks touching structural links on a doomed object.
+                if (replacements.ContainsKey(component)) continue;
 
                 using (var so = new SerializedObject(component))
                 {
@@ -156,10 +178,9 @@ namespace ModularAvatarCVR.Editor
                 switch (property.propertyType)
                 {
                     case SerializedPropertyType.ObjectReference:
-                        // m_Script points at a MonoScript and must never be rewritten. A
-                        // component's m_GameObject cannot match either: doomed bones carry no
-                        // components, which is precisely why they were eliminated.
-                        if (property.name == "m_Script") break;
+                        // Structural links live at the root of a component and describe where it
+                        // sits, not what it points at. Rewriting them corrupts the object graph.
+                        if (property.depth == 0 && StructuralProperties.Contains(property.name)) break;
 
                         var current = property.objectReferenceValue;
                         if (current == null) break;
