@@ -32,6 +32,11 @@ namespace ModularAvatarCVR
         [Tooltip("Rename bones in this armature to match the base armature after merging.")]
         public bool mangleNames = true;
 
+        [Tooltip("Remove colliders this outfit duplicates from the avatar — common when the outfit " +
+                 "armature was copied from it, which otherwise leaves two identical colliders on " +
+                 "every bone. Anything referencing the outfit's copy is repointed at the avatar's.")]
+        public bool removeDuplicateColliders = true;
+
         [Tooltip("Editor-only bone locking, mirroring VRC MA: each bone pair's offset is captured " +
                  "when the lock engages and preserved, so locking never deforms the outfit. " +
                  "Base → Merge: outfit bones follow avatar bone movement. Bidirectional: either side follows the other.")]

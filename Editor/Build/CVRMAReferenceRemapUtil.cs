@@ -40,7 +40,7 @@ namespace ModularAvatarCVR.Editor
         /// </summary>
         internal static int RemapReferences(
             GameObject scanRoot,
-            IReadOnlyDictionary<Transform, Transform> replacements,
+            IReadOnlyDictionary<Object, Object> replacements,
             string passLabel,
             bool verbose = false)
         {
@@ -80,14 +80,16 @@ namespace ModularAvatarCVR.Editor
         /// Builds an instance-ID keyed lookup. Instance IDs rather than Object keys, because
         /// UnityEngine.Object's fake-null Equals/GetHashCode make it a poor dictionary key.
         ///
-        /// Each doomed Transform contributes TWO entries — itself and its GameObject — mapped to
-        /// the matching half of the survivor. Instance IDs are unique, so a reference always
-        /// resolves to a replacement of its own type. That matters: objectReferenceValue's setter
-        /// does not type-check, and writing a Transform into a GameObject-typed field would
-        /// silently corrupt it.
+        /// A doomed Transform contributes TWO entries — itself and its GameObject — since a
+        /// reference may be typed either way and both die together. A doomed Component
+        /// contributes only itself; its GameObject usually survives.
+        ///
+        /// Instance IDs are unique, so a reference always resolves to a replacement of its own
+        /// type. That matters: objectReferenceValue's setter does not type-check, and writing a
+        /// Transform into a GameObject-typed field would silently corrupt it.
         /// </summary>
         private static Dictionary<int, Object> BuildLookup(
-            IReadOnlyDictionary<Transform, Transform> replacements, string passLabel)
+            IReadOnlyDictionary<Object, Object> replacements, string passLabel)
         {
             var lookup = new Dictionary<int, Object>(replacements.Count * 2);
 
@@ -100,7 +102,9 @@ namespace ModularAvatarCVR.Editor
                 if (survivor == null || survivor == doomed) continue;
 
                 lookup[doomed.GetInstanceID()] = survivor;
-                lookup[doomed.gameObject.GetInstanceID()] = survivor.gameObject;
+
+                if (doomed is Transform doomedTransform && survivor is Transform survivingTransform)
+                    lookup[doomedTransform.gameObject.GetInstanceID()] = survivingTransform.gameObject;
             }
 
             return lookup;
@@ -111,13 +115,13 @@ namespace ModularAvatarCVR.Editor
         /// (MergeArmature cannot produce such a chain — its keys live under the outfit and its
         /// values under the avatar — but this keeps the utility safe for future callers.)
         /// </summary>
-        private static Transform ResolveChain(
-            Transform survivor,
-            IReadOnlyDictionary<Transform, Transform> replacements,
-            Transform origin,
+        private static Object ResolveChain(
+            Object survivor,
+            IReadOnlyDictionary<Object, Object> replacements,
+            Object origin,
             string passLabel)
         {
-            var seen = new HashSet<Transform> { origin };
+            var seen = new HashSet<Object> { origin };
             int hops = 0;
 
             while (survivor != null && replacements.TryGetValue(survivor, out var next))

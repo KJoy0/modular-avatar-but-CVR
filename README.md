@@ -24,7 +24,7 @@ Add via **Add Component → Modular Avatar CVR**, or the
 
 | Component | What it does |
 |---|---|
-| **MA Merge Armature** | Merges an outfit's armature into the avatar's at build time. Auto-infers bone prefix/suffix when unset, and re-skins meshes onto the base bones (no duplicate bone chains, no deformation). |
+| **MA Merge Armature** | Merges an outfit's armature into the avatar's at build time. Auto-infers bone prefix/suffix when unset, and re-skins meshes onto the base bones (no duplicate bone chains, no deformation). Colliders the outfit duplicates from the avatar are dropped, and references to removed bones/colliders are repointed at the avatar's so Magica Cloth keeps working. |
 | **MA Bone Proxy** | Reparents an object to a humanoid bone (by `HumanBodyBones`, portable across avatars) with live editor preview. Attachment modes for keeping world pose / rotation / position, plus match-scale. |
 | **MA Replace Object** | Swaps an object into another object's place in the hierarchy at build. |
 | **MA Scale Adjuster** | Scales a bone with child compensation (children keep their world size). |

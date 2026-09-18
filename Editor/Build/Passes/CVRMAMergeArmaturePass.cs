@@ -67,12 +67,26 @@ namespace ModularAvatarCVR.Editor
                 var map = new Dictionary<Transform, Transform>();
                 BuildBoneMap(merger, merger.transform, merger.mergeTarget, map);
 
-                // 2. Decide which matched bones are redundant (pure Transform, no extra components)
-                //    and can be eliminated; the rest are kept (they own dynamics/components).
+                // 2a. An outfit armature copied from the avatar brings the avatar's collider
+                //     objects along with it. Those carry a component, so they would be kept and
+                //     reparented to sit uselessly beside the avatar's originals. Drop the outfit's
+                //     copies and point anything referencing them at the avatar's equivalents.
+                var duplicateColliders = new List<Component>();
+                var replacements = new Dictionary<Object, Object>();
+                if (merger.removeDuplicateColliders)
+                    FindDuplicateColliders(map, replacements, duplicateColliders);
+
+                // 2b. A matched bone is redundant once nothing but its Transform is left on it.
+                var doomedComponents = new HashSet<Component>(duplicateColliders);
                 var eliminate = new HashSet<Transform>();
                 foreach (var kv in map)
-                    if (kv.Key.GetComponents<Component>().Length <= 1) // only Transform
-                        eliminate.Add(kv.Key);
+                {
+                    int surviving = 0;
+                    foreach (var component in kv.Key.GetComponents<Component>())
+                        if (component != null && !doomedComponents.Contains(component)) surviving++;
+
+                    if (surviving <= 1) eliminate.Add(kv.Key); // only the Transform remains
+                }
 
                 // 3. Re-skin renderers: any bone reference pointing at an eliminated outfit bone
                 //    is repointed to the base bone. Kept bones are left alone.
@@ -88,18 +102,27 @@ namespace ModularAvatarCVR.Editor
                 //     remapIndices would come back empty if the bones were already repointed —
                 //     silently reintroducing in-game outfit deformation) and BEFORE MergeHierarchy
                 //     destroys anything.
-                if (eliminate.Count > 0)
-                {
-                    var replacements = new Dictionary<Transform, Transform>(eliminate.Count);
-                    foreach (var doomed in eliminate) replacements[doomed] = map[doomed];
+                foreach (var doomed in eliminate) replacements[doomed] = map[doomed];
 
+                if (replacements.Count > 0)
+                {
                     int repointed = CVRMAReferenceRemapUtil.RemapReferences(
                         avatarRoot, replacements, "MergeArmature");
                     if (repointed > 0)
                         Debug.Log(
                             $"[MA-CVR] MergeArmature on '{merger.gameObject.name}': repointed " +
-                            $"{repointed} reference(s) off {eliminate.Count} removed bone(s).");
+                            $"{repointed} reference(s) off {eliminate.Count} removed bone(s) and " +
+                            $"{duplicateColliders.Count} duplicate collider(s).");
                 }
+
+                // 3c. Nothing points at them any more, so the duplicate colliders can go.
+                foreach (var collider in duplicateColliders)
+                    if (collider != null) Object.DestroyImmediate(collider);
+
+                if (duplicateColliders.Count > 0)
+                    Debug.Log(
+                        $"[MA-CVR] MergeArmature on '{merger.gameObject.name}': removed " +
+                        $"{duplicateColliders.Count} collider(s) the avatar already provides.");
 
                 // 4. Restructure the hierarchy: eliminate redundant bones, reparent kept bones
                 //    and unmatched objects under the correct base bone (world pose preserved).
@@ -108,6 +131,57 @@ namespace ModularAvatarCVR.Editor
                 Object.DestroyImmediate(merger);
             }
         }
+
+        /// <summary>
+        /// Finds colliders the outfit duplicates from the avatar: a collider on a matched outfit
+        /// object whose base counterpart already carries the same collider type. Each is recorded
+        /// for removal and mapped to the avatar's equivalent so references survive the deletion.
+        ///
+        /// Colliders ONLY. An outfit's cloth/dynamics component is never a duplicate even when the
+        /// avatar has one of the same type — it drives different meshes, and removing it would
+        /// break the outfit.
+        /// </summary>
+        private static void FindDuplicateColliders(
+            Dictionary<Transform, Transform> map,
+            Dictionary<Object, Object> replacements,
+            List<Component> doomed)
+        {
+            // A base collider can only stand in for one outfit copy.
+            var claimed = new HashSet<Component>();
+
+            foreach (var kv in map)
+            {
+                var outfitComponents = kv.Key.GetComponents<Component>();
+                if (outfitComponents.Length <= 1) continue; // Transform only
+
+                var baseComponents = kv.Value.GetComponents<Component>();
+
+                foreach (var outfitComponent in outfitComponents)
+                {
+                    if (outfitComponent == null || !IsCollider(outfitComponent)) continue;
+
+                    var type = outfitComponent.GetType();
+                    foreach (var baseComponent in baseComponents)
+                    {
+                        if (baseComponent == null || baseComponent.GetType() != type) continue;
+                        if (!claimed.Add(baseComponent)) continue;
+
+                        replacements[outfitComponent] = baseComponent;
+                        doomed.Add(outfitComponent);
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Type-free collider test: Unity's own colliders, plus anything whose type name says so
+        /// (MagicaCapsuleCollider, MagicaSphereCollider, VRCPhysBoneCollider…). Kept name-based so
+        /// the package needs no compile-time dependency on Magica or any other dynamics system.
+        /// </summary>
+        private static bool IsCollider(Component component) =>
+            component is Collider ||
+            component.GetType().Name.IndexOf("Collider", System.StringComparison.OrdinalIgnoreCase) >= 0;
 
         private static bool HasTopLevelMatch(CVRMAMergeArmature merger)
         {
