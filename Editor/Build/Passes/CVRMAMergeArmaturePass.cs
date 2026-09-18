@@ -188,6 +188,31 @@ namespace ModularAvatarCVR.Editor
                 doomedColliders.Add(outfitCollider);
             }
 
+            // Rule 2 — same destination bone, same collider type. Outfit collider objects are
+            // routinely named on a different convention from the avatar's (MagicaCollider_Neck
+            // landing beside MagicaClothCollider_Neck), so names alone pair almost none of them.
+            // What actually makes one redundant is arriving at the same bone carrying the same
+            // kind of collider.
+            var claimed = new HashSet<Component>();
+            foreach (var value in replacements.Values)
+                if (value is Component alreadyUsed) claimed.Add(alreadyUsed);
+
+            foreach (var outfitCollider in merger.GetComponentsInChildren<Component>(true))
+            {
+                if (outfitCollider == null || !IsCollider(outfitCollider)) continue;
+                if (replacements.ContainsKey(outfitCollider)) continue; // already paired by name
+
+                var destination = ResolveDestinationBone(outfitCollider.transform, map);
+                if (destination == null) continue;
+
+                var match = FindColliderOnBone(destination, outfitCollider.GetType(), claimed);
+                if (match == null) continue;
+
+                claimed.Add(match);
+                replacements[outfitCollider] = match;
+                doomedColliders.Add(outfitCollider);
+            }
+
             // An object that existed only to carry a duplicated collider is clutter once the
             // collider is gone. Matched ones are already covered by the eliminate set; drop the
             // unmatched ones here, pointing references at the avatar's equivalent object.
@@ -208,6 +233,48 @@ namespace ModularAvatarCVR.Editor
                 if (replacements[group] is Component survivor)
                     replacements[owner.transform] = survivor.transform;
             }
+        }
+
+        /// <summary>
+        /// Where an outfit object will end up once merged: the base bone of its nearest mapped
+        /// ancestor. Null when nothing above it matched, in which case it lands somewhere the
+        /// avatar has no counterpart for and cannot be a duplicate.
+        /// </summary>
+        private static Transform ResolveDestinationBone(
+            Transform outfitObject, Dictionary<Transform, Transform> map)
+        {
+            for (var parent = outfitObject.parent; parent != null; parent = parent.parent)
+                if (map.TryGetValue(parent, out var baseBone)) return baseBone;
+            return null;
+        }
+
+        /// <summary>Looks for an unclaimed collider of this type on the bone or directly under it.</summary>
+        private static Component FindColliderOnBone(
+            Transform bone, System.Type type, HashSet<Component> claimed)
+        {
+            var onBone = FindColliderOn(bone, type, claimed);
+            if (onBone != null) return onBone;
+
+            foreach (Transform child in bone)
+            {
+                var onChild = FindColliderOn(child, type, claimed);
+                if (onChild != null) return onChild;
+            }
+            return null;
+        }
+
+        private static Component FindColliderOn(Transform obj, System.Type type, HashSet<Component> claimed)
+        {
+            foreach (var component in obj.GetComponents<Component>())
+            {
+                if (component == null || component.GetType() != type) continue;
+                if (claimed.Contains(component)) continue;
+                // Anything still under a merge armature belongs to an outfit that has not been
+                // merged yet, and may itself be removed later.
+                if (component.GetComponentInParent<CVRMAMergeArmature>(true) != null) continue;
+                return component;
+            }
+            return null;
         }
 
         /// <summary>Removes the merger's configured prefix/suffix from a name, when present.</summary>
