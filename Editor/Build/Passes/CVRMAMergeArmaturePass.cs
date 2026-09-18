@@ -72,9 +72,11 @@ namespace ModularAvatarCVR.Editor
                 //     reparented to sit uselessly beside the avatar's originals. Drop the outfit's
                 //     copies and point anything referencing them at the avatar's equivalents.
                 var duplicateColliders = new List<Component>();
+                var emptiedColliderObjects = new List<GameObject>();
                 var replacements = new Dictionary<Object, Object>();
                 if (merger.removeDuplicateColliders)
-                    FindDuplicateColliders(map, replacements, duplicateColliders);
+                    FindDuplicateColliders(merger, avatarRoot, map, replacements,
+                        duplicateColliders, emptiedColliderObjects);
 
                 // 2b. A matched bone is redundant once nothing but its Transform is left on it.
                 var doomedComponents = new HashSet<Component>(duplicateColliders);
@@ -115,14 +117,21 @@ namespace ModularAvatarCVR.Editor
                             $"{duplicateColliders.Count} duplicate collider(s).");
                 }
 
-                // 3c. Nothing points at them any more, so the duplicate colliders can go.
+                // 3c. Nothing points at them any more, so the duplicates can go — the colliders
+                //     first, then any object left holding nothing but its Transform.
                 foreach (var collider in duplicateColliders)
                     if (collider != null) Object.DestroyImmediate(collider);
+
+                foreach (var emptied in emptiedColliderObjects)
+                    if (emptied != null) Object.DestroyImmediate(emptied);
 
                 if (duplicateColliders.Count > 0)
                     Debug.Log(
                         $"[MA-CVR] MergeArmature on '{merger.gameObject.name}': removed " +
-                        $"{duplicateColliders.Count} collider(s) the avatar already provides.");
+                        $"{duplicateColliders.Count} collider(s) the avatar already provides" +
+                        (emptiedColliderObjects.Count > 0
+                            ? $", and {emptiedColliderObjects.Count} object(s) left empty by that."
+                            : "."));
 
                 // 4. Restructure the hierarchy: eliminate redundant bones, reparent kept bones
                 //    and unmatched objects under the correct base bone (world pose preserved).
@@ -133,45 +142,82 @@ namespace ModularAvatarCVR.Editor
         }
 
         /// <summary>
-        /// Finds colliders the outfit duplicates from the avatar: a collider on a matched outfit
-        /// object whose base counterpart already carries the same collider type. Each is recorded
-        /// for removal and mapped to the avatar's equivalent so references survive the deletion.
+        /// Finds colliders the outfit duplicates from the avatar and maps each to the avatar's
+        /// equivalent, so references survive the deletion.
+        ///
+        /// Matching is by object name (affixes stripped) plus component type, rather than by the
+        /// bone map: an outfit's collider objects frequently do NOT line up with the avatar's
+        /// hierarchy, so they never enter the bone map and instead get adopted as siblings — which
+        /// is how duplicates kept appearing even after matched ones were being handled.
         ///
         /// Colliders ONLY. An outfit's cloth/dynamics component is never a duplicate even when the
         /// avatar has one of the same type — it drives different meshes, and removing it would
         /// break the outfit.
         /// </summary>
         private static void FindDuplicateColliders(
+            CVRMAMergeArmature merger,
+            GameObject avatarRoot,
             Dictionary<Transform, Transform> map,
             Dictionary<Object, Object> replacements,
-            List<Component> doomed)
+            List<Component> doomedColliders,
+            List<GameObject> doomedObjects)
         {
-            // A base collider can only stand in for one outfit copy.
-            var claimed = new HashSet<Component>();
-
-            foreach (var kv in map)
+            // Index what the avatar already provides. Anything still sitting under a merge
+            // armature belongs to an outfit — including outfits queued behind this one — and
+            // must not be treated as the survivor, since it may itself be removed later.
+            var existing = new Dictionary<(string, System.Type), Component>();
+            foreach (var candidate in avatarRoot.GetComponentsInChildren<Component>(true))
             {
-                var outfitComponents = kv.Key.GetComponents<Component>();
-                if (outfitComponents.Length <= 1) continue; // Transform only
+                if (candidate == null || !IsCollider(candidate)) continue;
+                if (candidate.GetComponentInParent<CVRMAMergeArmature>(true) != null) continue;
 
-                var baseComponents = kv.Value.GetComponents<Component>();
-
-                foreach (var outfitComponent in outfitComponents)
-                {
-                    if (outfitComponent == null || !IsCollider(outfitComponent)) continue;
-
-                    var type = outfitComponent.GetType();
-                    foreach (var baseComponent in baseComponents)
-                    {
-                        if (baseComponent == null || baseComponent.GetType() != type) continue;
-                        if (!claimed.Add(baseComponent)) continue;
-
-                        replacements[outfitComponent] = baseComponent;
-                        doomed.Add(outfitComponent);
-                        break;
-                    }
-                }
+                var key = (StripAffixes(candidate.gameObject.name, merger), candidate.GetType());
+                if (!existing.ContainsKey(key)) existing[key] = candidate;
             }
+            if (existing.Count == 0) return;
+
+            foreach (var outfitCollider in merger.GetComponentsInChildren<Component>(true))
+            {
+                if (outfitCollider == null || !IsCollider(outfitCollider)) continue;
+
+                var key = (StripAffixes(outfitCollider.gameObject.name, merger), outfitCollider.GetType());
+                if (!existing.TryGetValue(key, out var avatarCollider)) continue;
+                if (avatarCollider == outfitCollider) continue;
+
+                replacements[outfitCollider] = avatarCollider;
+                doomedColliders.Add(outfitCollider);
+            }
+
+            // An object that existed only to carry a duplicated collider is clutter once the
+            // collider is gone. Matched ones are already covered by the eliminate set; drop the
+            // unmatched ones here, pointing references at the avatar's equivalent object.
+            var doomedSet = new HashSet<Component>(doomedColliders);
+            foreach (var group in doomedColliders)
+            {
+                var owner = group.gameObject;
+                if (map.ContainsKey(owner.transform)) continue;   // handled via eliminate
+                if (owner.transform.childCount > 0) continue;     // still holds something
+                if (doomedObjects.Contains(owner)) continue;
+
+                int surviving = 0;
+                foreach (var component in owner.GetComponents<Component>())
+                    if (component != null && !doomedSet.Contains(component)) surviving++;
+                if (surviving > 1) continue;                      // more than just the Transform
+
+                doomedObjects.Add(owner);
+                if (replacements[group] is Component survivor)
+                    replacements[owner.transform] = survivor.transform;
+            }
+        }
+
+        /// <summary>Removes the merger's configured prefix/suffix from a name, when present.</summary>
+        private static string StripAffixes(string name, CVRMAMergeArmature merger)
+        {
+            if (!string.IsNullOrEmpty(merger.prefix) && name.StartsWith(merger.prefix))
+                name = name.Substring(merger.prefix.Length);
+            if (!string.IsNullOrEmpty(merger.suffix) && name.EndsWith(merger.suffix))
+                name = name.Substring(0, name.Length - merger.suffix.Length);
+            return name;
         }
 
         /// <summary>
