@@ -145,10 +145,15 @@ namespace ModularAvatarCVR.Editor
         /// Finds colliders the outfit duplicates from the avatar and maps each to the avatar's
         /// equivalent, so references survive the deletion.
         ///
-        /// Matching is by object name (affixes stripped) plus component type, rather than by the
-        /// bone map: an outfit's collider objects frequently do NOT line up with the avatar's
-        /// hierarchy, so they never enter the bone map and instead get adopted as siblings — which
-        /// is how duplicates kept appearing even after matched ones were being handled.
+        /// Default matching is by object name (affixes stripped) plus component type, rather than
+        /// by the bone map: an outfit's collider objects frequently do NOT line up with the
+        /// avatar's hierarchy, so they never enter the bone map and instead get adopted as
+        /// siblings — which is how duplicates kept appearing even after matched ones were handled.
+        ///
+        /// A second rule, matching on destination bone + type regardless of name, is available via
+        /// matchDuplicateCollidersByBone. It is off by default: it infers intent rather than
+        /// detecting a copy, so it cannot tell a redundant collider from one deliberately sized
+        /// for the garment.
         ///
         /// Colliders ONLY. An outfit's cloth/dynamics component is never a duplicate even when the
         /// avatar has one of the same type — it drives different meshes, and removing it would
@@ -188,29 +193,32 @@ namespace ModularAvatarCVR.Editor
                 doomedColliders.Add(outfitCollider);
             }
 
-            // Rule 2 — same destination bone, same collider type. Outfit collider objects are
-            // routinely named on a different convention from the avatar's (MagicaCollider_Neck
-            // landing beside MagicaClothCollider_Neck), so names alone pair almost none of them.
-            // What actually makes one redundant is arriving at the same bone carrying the same
-            // kind of collider.
-            var claimed = new HashSet<Component>();
-            foreach (var value in replacements.Values)
-                if (value is Component alreadyUsed) claimed.Add(alreadyUsed);
-
-            foreach (var outfitCollider in merger.GetComponentsInChildren<Component>(true))
+            // Rule 2 (opt-in) — same destination bone, same collider type. Needed when the outfit
+            // uses its own naming convention (MagicaCollider_Neck landing beside
+            // MagicaClothCollider_Neck), where names pair almost nothing. Off by default because
+            // "same bone, same type" is a guess at intent rather than evidence of a copy: an
+            // outfit collider deliberately sized for the garment looks identical to a duplicate.
+            if (merger.matchDuplicateCollidersByBone)
             {
-                if (outfitCollider == null || !IsCollider(outfitCollider)) continue;
-                if (replacements.ContainsKey(outfitCollider)) continue; // already paired by name
+                var claimed = new HashSet<Component>();
+                foreach (var value in replacements.Values)
+                    if (value is Component alreadyUsed) claimed.Add(alreadyUsed);
 
-                var destination = ResolveDestinationBone(outfitCollider.transform, map);
-                if (destination == null) continue;
+                foreach (var outfitCollider in merger.GetComponentsInChildren<Component>(true))
+                {
+                    if (outfitCollider == null || !IsCollider(outfitCollider)) continue;
+                    if (replacements.ContainsKey(outfitCollider)) continue; // already paired by name
 
-                var match = FindColliderOnBone(destination, outfitCollider.GetType(), claimed);
-                if (match == null) continue;
+                    var destination = ResolveDestinationBone(outfitCollider.transform, map);
+                    if (destination == null) continue;
 
-                claimed.Add(match);
-                replacements[outfitCollider] = match;
-                doomedColliders.Add(outfitCollider);
+                    var match = FindColliderOnBone(destination, outfitCollider.GetType(), claimed);
+                    if (match == null) continue;
+
+                    claimed.Add(match);
+                    replacements[outfitCollider] = match;
+                    doomedColliders.Add(outfitCollider);
+                }
             }
 
             // An object that existed only to carry a duplicated collider is clutter once the

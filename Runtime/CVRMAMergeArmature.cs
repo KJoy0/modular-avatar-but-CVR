@@ -34,8 +34,16 @@ namespace ModularAvatarCVR
 
         [Tooltip("Remove colliders this outfit duplicates from the avatar — common when the outfit " +
                  "armature was copied from it, which otherwise leaves two identical colliders on " +
-                 "every bone. Anything referencing the outfit's copy is repointed at the avatar's.")]
+                 "every bone. Matched by object name, so only unambiguous copies are removed. " +
+                 "Anything referencing the outfit's copy is repointed at the avatar's.")]
         public bool removeDuplicateColliders = true;
+
+        [Tooltip("Also treat a collider as a duplicate when it merely lands on the same bone as an " +
+                 "avatar collider of the same type, even under a different name. Needed when the " +
+                 "outfit uses its own collider naming convention, but it will also remove outfit " +
+                 "colliders that were deliberately sized for the garment — leave off unless you " +
+                 "are seeing duplicates that name matching misses.")]
+        public bool matchDuplicateCollidersByBone = false;
 
         [Tooltip("Editor-only bone locking, mirroring VRC MA: each bone pair's offset is captured " +
                  "when the lock engages and preserved, so locking never deforms the outfit. " +
